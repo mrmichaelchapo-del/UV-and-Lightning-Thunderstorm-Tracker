@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NWS Serious Thunderstorms</title>
+
+<style>
+* {
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f3f5f7;
+  color: #17202a;
+}
+
+header {
+  background: #17202a;
+  color: white;
+  padding: 24px;
+}
+
+header h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+}
+
+header p {
+  margin: 0;
+  color: #cbd5dc;
+}
+
+main {
+  width: min(1100px, 94%);
+  margin: 24px auto;
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+button,
+input,
+select {
+  border: 1px solid #ccd3d9;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: white;
+}
+
+button {
+  cursor: pointer;
+  background: #1769aa;
+  color: white;
+  border-color: #1769aa;
+}
+
+button:hover {
+  background: #12578c;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat {
+  background: white;
+  border: 1px solid #dce1e5;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.stat strong {
+  display: block;
+  font-size: 25px;
+  margin-bottom: 4px;
+}
+
+.stat span {
+  color: #66727d;
+  font-size: 13px;
+}
+
+#status {
+  margin: 12px 0;
+  color: #59636d;
+}
+
+#alerts {
+  display: grid;
+  gap: 15px;
+}
+
+.alert {
+  background: white;
+  border: 1px solid #dce1e5;
+  border-left: 6px solid #e09b00;
+  border-radius: 10px;
+  padding: 18px;
+}
+
+.alert.warning {
+  border-left-color: #d93025;
+}
+
+.alert.watch {
+  border-left-color: #e09b00;
+}
+
+.alert h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.headline {
+  font-weight: bold;
+  margin-bottom: 12px;
+}
+
+.area {
+  color: #4d5963;
+  margin-bottom: 12px;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.meta div {
+  background: #f4f6f8;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 13px;
+}
+
+.description {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  color: #303a43;
+}
+
+.alert a {
+  display: inline-block;
+  margin-top: 14px;
+  color: #1769aa;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.alert a:hover {
+  text-decoration: underline;
+}
+
+.empty,
+.error {
+  background: white;
+  border: 1px solid #dce1e5;
+  border-radius: 10px;
+  padding: 25px;
+  text-align: center;
+}
+
+.error {
+  color: #a51d16;
+}
+
+footer {
+  text-align: center;
+  padding: 30px;
+  color: #707b84;
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .stats {
+    grid-template-columns: 1fr;
+  }
+
+  .meta {
+    grid-template-columns: 1fr;
+  }
+
+  header h1 {
+    font-size: 23px;
+  }
+
+  .alert h2 {
+    font-size: 18px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>NWS Serious Thunderstorms</h1>
+  <p>Live severe thunderstorm warnings and watches from the National Weather Service</p>
+</header>
+
+<main>
+
+  <div class="toolbar">
+    <button id="refreshButton">Refresh Alerts</button>
+
+    <input
+      id="search"
+      type="search"
+      placeholder="Search state, county, or area..."
+    >
+
+    <select id="typeFilter">
+      <option value="all">All serious thunderstorm alerts</option>
+      <option value="warning">Warnings</option>
+      <option value="watch">Watches</option>
+    </select>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <strong id="totalCount">0</strong>
+      <span>Serious thunderstorm alerts</span>
+    </div>
+
+    <div class="stat">
+      <strong id="warningCount">0</strong>
+      <span>Severe thunderstorm warnings</span>
+    </div>
+
+    <div class="stat">
+      <strong id="watchCount">0</strong>
+      <span>Thunderstorm watches</span>
+    </div>
+  </div>
+
+  <div id="status">Loading NWS alerts...</div>
+
+  <section id="alerts"></section>
+
+</main>
+
+<footer>
+  Data provided by the National Weather Service API.
+</footer>
+
+<script>
+const API_URL =
+  "https://api.weather.gov/alerts/active?status=actual";
+
+const alertsContainer = document.getElementById("alerts");
+const statusElement = document.getElementById("status");
+const refreshButton = document.getElementById("refreshButton");
+const searchInput = document.getElementById("search");
+const typeFilter = document.getElementById("typeFilter");
+
+let allAlerts = [];
+
+function escapeHTML(value) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return date.toLocaleString();
+}
+
+function getAlertType(event) {
+  const text = event.toLowerCase();
+
+  if (text.includes("watch")) {
+    return "watch";
+  }
+
+  return "warning";
+}
+
+function isThunderstormAlert(feature) {
+  const event = feature.properties?.event || "";
+  const text = event.toLowerCase();
+
+  return (
+    text.includes("severe thunderstorm warning") ||
+    text.includes("severe thunderstorm watch") ||
+    text.includes("thunderstorm warning") ||
+    text.includes("thunderstorm watch")
+  );
+}
+
+function sortAlerts(alerts) {
+  return alerts.sort((a, b) => {
+    const first =
+      new Date(a.properties?.effective || a.properties?.sent || 0);
+
+    const second =
+      new Date(b.properties?.effective || b.properties?.sent || 0);
+
+    return second - first;
+  });
+}
+
+async function loadAlerts() {
+  statusElement.textContent = "Fetching current NWS alerts...";
+  alertsContainer.innerHTML = "";
+
+  refreshButton.disabled = true;
+
+  try {
+    const response = await fetch(API_URL, {
+      headers: {
+        Accept: "application/geo+json"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        "NWS returned HTTP " + response.status
+      );
+    }
+
+    const data = await response.json();
+
+    allAlerts = (data.features || [])
+      .filter(isThunderstormAlert);
+
+    sortAlerts(allAlerts);
+
+    updateStats();
+    renderAlerts();
+
+    statusElement.textContent =
+      "Last updated: " + new Date().toLocaleString();
+
+  } catch (error) {
+    console.error(error);
+
+    statusElement.textContent =
+      "Unable to load NWS alerts.";
+
+    alertsContainer.innerHTML = `
+      <div class="error">
+        <strong>NWS request failed.</strong>
+        <p>${escapeHTML(error.message)}</p>
+        <button onclick="loadAlerts()">Try Again</button>
+      </div>
+    `;
+  }
+
+  refreshButton.disabled = false;
+}
+
+function updateStats() {
+  const warnings = allAlerts.filter(alert => {
+    return getAlertType(
+      alert.properties?.event || ""
+    ) === "warning";
+  });
+
+  const watches = allAlerts.filter(alert => {
+    return getAlertType(
+      alert.properties?.event || ""
+    ) === "watch";
+  });
+
+  document.getElementById("totalCount").textContent =
+    allAlerts.length;
+
+  document.getElementById("warningCount").textContent =
+    warnings.length;
+
+  document.getElementById("watchCount").textContent =
+    watches.length;
+}
+
+function getFilteredAlerts() {
+  const search = searchInput.value
+    .trim()
+    .toLowerCase();
+
+  const type = typeFilter.value;
+
+  return allAlerts.filter(alert => {
+    const properties = alert.properties || {};
+
+    const event =
+      properties.event || "";
+
+    const area =
+      properties.areaDesc || "";
+
+    const headline =
+      properties.headline || "";
+
+    const matchesSearch =
+      !search ||
+      event.toLowerCase().includes(search) ||
+      area.toLowerCase().includes(search) ||
+      headline.toLowerCase().includes(search);
+
+    const matchesType =
+      type === "all" ||
+      getAlertType(event) === type;
+
+    return matchesSearch && matchesType;
+  });
+}
+
+function renderAlerts() {
+  const alerts = getFilteredAlerts();
+
+  if (!alerts.length) {
+    alertsContainer.innerHTML = `
+      <div class="empty">
+        No serious thunderstorm alerts match your filter.
+      </div>
+    `;
+
+    return;
+  }
+
+  alertsContainer.innerHTML =
+    alerts.map(createAlertHTML).join("");
+}
+
+function createAlertHTML(feature) {
+  const p = feature.properties || {};
+
+  const event = p.event || "Thunderstorm Alert";
+  const type = getAlertType(event);
+
+  const headline =
+    p.headline || "No headline provided.";
+
+  const area =
+    p.areaDesc || "Area unavailable.";
+
+  const description =
+    p.description || "No description provided.";
+
+  const severity =
+    p.severity || "Unknown";
+
+  const urgency =
+    p.urgency || "Unknown";
+
+  const certainty =
+    p.certainty || "Unknown";
+
+  const sent =
+    formatDate(p.sent);
+
+  const effective =
+    formatDate(p.effective);
+
+  const expires =
+    formatDate(p.expires);
+
+  const url =
+    feature.id || p["@id"] || "";
+
+  return `
+    <article class="alert ${type}">
+      <h2>${escapeHTML(event)}</h2>
+
+      <div class="headline">
+        ${escapeHTML(headline)}
+      </div>
+
+      <div class="area">
+        <strong>Area:</strong>
+        ${escapeHTML(area)}
+      </div>
+
+      <div class="meta">
+        <div>
+          <strong>Severity:</strong>
+          ${escapeHTML(severity)}
+        </div>
+
+        <div>
+          <strong>Urgency:</strong>
+          ${escapeHTML(urgency)}
+        </div>
+
+        <div>
+          <strong>Certainty:</strong>
+          ${escapeHTML(certainty)}
+        </div>
+
+        <div>
+          <strong>Sent:</strong>
+          ${escapeHTML(sent)}
+        </div>
+
+        <div>
+          <strong>Effective:</strong>
+          ${escapeHTML(effective)}
+        </div>
+
+        <div>
+          <strong>Expires:</strong>
+          ${escapeHTML(expires)}
+        </div>
+      </div>
+
+      <div class="description">
+        ${escapeHTML(description)}
+      </div>
+
+      ${
+        url
+          ? `<a href="${escapeHTML(url)}"
+               target="_blank"
+               rel="noopener">
+               Open NWS Alert
+             </a>`
+          : ""
+      }
+    </article>
+  `;
+}
+
+refreshButton.addEventListener(
+  "click",
+  loadAlerts
+);
+
+searchInput.addEventListener(
+  "input",
+  renderAlerts
+);
+
+typeFilter.addEventListener(
+  "change",
+  renderAlerts
+);
+
+loadAlerts();
+
+setInterval(
+  loadAlerts,
+  5 * 60 * 1000
+);
+</script>
+
+</body>
+</html>
