@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Copilot - UV radiation and thunderstorm tracker</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f2f2f2;
+        }
+
+        .chat {
+            height: 100vh;
+            max-width: 800px;
+            margin: auto;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+
+        .header {
+            padding: 18px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .header h1 {
+            margin: 0;
+        }
+
+        #tokens {
+            margin-top: 5px;
+            color: #666;
+            font-size: 13px;
+        }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .message {
+            max-width: 80%;
+            margin-bottom: 12px;
+            padding: 12px 15px;
+            border-radius: 14px;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            margin-left: auto;
+            background: #007aff;
+            color: white;
+        }
+
+        .bot {
+            background: #e8e8ea;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+        }
+
+        textarea {
+            flex: 1;
+            resize: none;
+            padding: 12px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+        }
+
+        button {
+            padding: 0 20px;
+            border: 0;
+            border-radius: 10px;
+            background: #007aff;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="chat">
+
+    <div class="header">
+        <h1>Copilor</h1>
+        <div id="tokens">0 / 20,000 tokens</div>
+    </div>
+
+    <div id="messages"></div>
+
+    <div class="input-area">
+        <textarea
+            id="input"
+            placeholder="Type a message!"
+            rows="47"
+        ></textarea>
+
+        <button id="send">✈️ Send</button>
+    </div>
+
+</div>
+
+
+<!-- PYTHON RUNTIME -->
+<script src="https://cdn.jsdelivr.net/pyodide/v0.28.2/full/pyodide.js"></script>
+
+
+<!-- PYTHON INSIDE THE HTML -->
+<script type="text/python">
+
+MAX_TOKENS = 30_000
+
+context = []
+token_count = 0
+
+
+def estimate_tokens(text):
+    # Simple estimate.
+    return max(1, len(text) // 4)
+
+
+def chatbot(message):
+
+    global token_count
+
+    user_tokens = estimate_tokens(message)
+
+    if token_count + user_tokens > MAX_TOKENS:
+        return {
+            "error": "20,000-token context limit reached."
+        }
+
+    context.append({
+        "role": "user",
+        "content": message
+    })
+
+    token_count += user_tokens
+
+
+    # Simple chatbot logic
+    if message.lower() in ["hi", "hello", "hey"]:
+        reply = "Hello! How are you doing?👋"
+
+    elif "token" in message.lower():
+        reply = (
+            f"My maximum context window is "
+            f"{MAX_TOKENS:,} tokens."
+        )
+
+    elif "python" in message.lower():
+        reply = "Yes! Python is running inside this AI."
+
+    else:
+        reply = f"You said: {message}"
+
+
+    reply_tokens = estimate_tokens(reply)
+
+
+    if token_count + reply_tokens > MAX_TOKENS:
+        return {
+            "error":
+                "Not enough room for the chatbot response."
+        }
+
+
+    context.append({
+        "role": "assistant",
+        "content": reply
+    })
+
+    token_count += reply_tokens
+
+
+    return {
+        "reply": reply,
+        "tokens": token_count,
+        "max_tokens": MAX_TOKENS
+    }
+
+</script>
+
+
+<!-- JAVASCRIPT -->
+<script>
+
+let pyodide;
+
+async function startPython() {
+
+    pyodide = await loadPyodide();
+
+    const pythonCode =
+        document.querySelector(
+            'script[type="text/python"]'
+        ).textContent;
+
+    await pyodide.runPythonAsync(pythonCode);
+}
+
+
+startPython();
+
+
+const input =
+    document.getElementById("input");
+
+const send =
+    document.getElementById("send");
+
+const messages =
+    document.getElementById("messages");
+
+const tokens =
+    document.getElementById("tokens");
+
+
+function addMessage(text, type) {
+
+    const element =
+        document.createElement("div");
+
+    element.className =
+        "message " + type;
+
+    element.textContent = text;
+
+    messages.appendChild(element);
+
+    messages.scrollTop =
+        messages.scrollHeight;
+}
+
+
+async function sendMessage() {
+
+    const text =
+        input.value.trim();
+
+    if (!text || !pyodide) {
+        return;
+    }
+
+    addMessage(text, "user");
+
+    input.value = "";
+
+    const escaped =
+        JSON.stringify(text);
+
+    const result =
+        await pyodide.runPythonAsync(
+            `chatbot(${escaped})`
+        );
+
+    const data =
+        result.toJs({
+            dict_converter: Object.fromEntries
+        });
+
+
+    if (data.error) {
+
+        addMessage(
+            data.error,
+            "bot"
+        );
+
+    } else {
+
+        addMessage(
+            data.reply,
+            "bot"
+        );
+
+        tokens.textContent =
+            `${data.tokens.toLocaleString()} / ` +
+            `${data.max_tokens.toLocaleString()} tokens`;
+
+    }
+}
+
+
+send.addEventListener(
+    "click",
+    sendMessage
+);
+
+
+input.addEventListener(
+    "keydown",
+    event => {
+
+        if (
+            event.key === "Enter" &&
+            !event.shiftKey
+        ) {
+
+            event.preventDefault();
+
+            sendMessage();
+        }
+
+    }
+);
+
+</script>
+
+</body>
+</html>
