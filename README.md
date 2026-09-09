@@ -4,3 +4,6 @@ National Weather Service: SEVERE THUNDERSTORM WARNING in effect for this area un
 
 ## Notes 
 the NWS is currently forming a Severe Thunderstorm Watch, where people keep an eye on Cleveland until 11:00.
+
+## New updates
+There will now be a desktop app for this too.
